@@ -129,10 +129,11 @@ async def run_multi_agent(input: str):
         termination_strategy= approvalTerminationStrategy
     )
 
+    initial_prompt = input
+
     # Invoke the chat and let the agents collaborate
     responses = await chat.invoke(input=ChatHistory(messages=[(await retrieve_tool_call_results(message=initial_prompt, tool_call_results=[initial_prompt]))[0]]))
     
+    extract_and_save_html(responses)
+
     return responses
-
-
-    # 5. Execute the post-processing callback function: extract_and_save_html(chat_history)
