@@ -167,8 +167,8 @@ async def run_multi_agent(user_prompt: str):
 
 if __name__ == "__main__":
     initial_request = (
-        "Create a simple landing page for a new SaaS product called 'AI-Boost'. "
-        "It needs a title, a brief description, and a call-to-action button that says 'Sign Up Now'."
+        "Create a simple calculator app that supports 4 basic arithmetic operations: addition, subtraction, multiplication and division. "
+        "It needs a title, a brief description, and a clean and simple user interface. Avoid using dependencies, stick to vanilla CSS and JS where possible."
         "All code should be in a single `index.html` file."
     )
     asyncio.run(run_multi_agent(initial_request))
