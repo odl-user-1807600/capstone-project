@@ -1,49 +1,52 @@
 import asyncio
 import re
 import os
-import subprocess # <-- Import the subprocess module
-
+import subprocess
+from typing import List
 
 from semantic_kernel.agents import AgentGroupChat, ChatCompletionAgent
 from semantic_kernel.agents.strategies.termination.termination_strategy import TerminationStrategy
-from semantic_kernel.agents.strategies.selection.kernel_function_selection_strategy import (
-    KernelFunctionSelectionStrategy,
-)
-from semantic_kernel.connectors.ai.function_choice_behavior import FunctionChoiceBehavior
-from semantic_kernel.connectors.ai.open_ai.services.azure_chat_completion import AzureChatCompletion
+from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
+from semantic_kernel.contents.chat_history import ChatHistory
 from semantic_kernel.contents.chat_message_content import ChatMessageContent
-from semantic_kernel.contents.utils.author_role import AuthorRole
 from semantic_kernel.kernel import Kernel
 
+from dotenv import load_dotenv
 
+# Load environment variables from .env file
+load_dotenv(override=True)
 
+# --- UPDATED TERMINATION STRATEGY ---
 class ApprovalTerminationStrategy(TerminationStrategy):
-    """A strategy for determining when an agent should terminate."""
- 
-    async def should_agent_terminate(self, agent, history):
-        """Check if the agent should terminate."""
-        if not chat_history or not chat_history.messages:
+    """
+    Terminates the conversation when the last message content is 'READY FOR USER APPROVAL'.
+    This is expected to come from the ProductOwner agent.
+    """
+    async def should_terminate(self, agent, history: ChatHistory) -> bool:
+        """Check if the agent group should terminate."""
+        if not history:
             return False
 
         # Get the last message in the chat history
-        last_message = chat_history.messages[-1]
+        last_message = history[-1]
 
-        # Check if the last message is from a user and its content is "APPROVED"
-        if last_message.author_role == AuthorRole.USER and \
-           last_message.content and \
-           last_message.content.strip().upper() == "APPROVED":
-            print("\n--- User typed 'APPROVED'. Terminating chat. ---")
+        # Check if the last message content is "READY FOR USER APPROVAL"
+        if last_message.content and last_message.content.strip().upper() == "READY FOR USER APPROVAL":
+            print("\n--- 'READY FOR USER APPROVAL' received. Pausing for user input. ---")
             return True
+        
         return False
 
+# --- UNCHANGED POST-PROCESSING FUNCTION ---
 def extract_and_save_html(history: ChatHistory, filename: str = "index.html"):
     """
     Extracts HTML, saves it, and then calls a script to push it to GitHub.
     """
     print("\n\n----- POST-PROCESSING STEP -----")
     
+    # Filter for messages from the SoftwareEngineer agent by name
     engineer_messages = [
-        msg.content for msg in history.messages if msg.author_name == "SoftwareEngineer"
+        msg.content for msg in history.messages if msg.name == "SoftwareEngineer"
     ]
 
     if not engineer_messages:
@@ -52,12 +55,13 @@ def extract_and_save_html(history: ChatHistory, filename: str = "index.html"):
 
     html_snippets = []
     for message in engineer_messages:
+        # Regex to find ```html ... ``` blocks
         found = re.findall(r"```html\n(.*?)\n```", message, re.DOTALL)
         if found:
             html_snippets.extend(found)
 
     if not html_snippets:
-        print("SoftwareEngineer did not provide any HTML code. No file created.")
+        print("SoftwareEngineer did not provide any HTML code in the correct format. No file created.")
         return
         
     final_html = "\n".join(html_snippets)
@@ -68,72 +72,103 @@ def extract_and_save_html(history: ChatHistory, filename: str = "index.html"):
         print(f"✅ Successfully extracted HTML and saved to '{filename}'")
     except IOError as e:
         print(f"❌ Error saving file: {e}")
-        return # Exit if file saving fails
+        return
 
-    # --- NEW: Call the bash script to push to GitHub ---
+    # --- Call the bash script to push to GitHub ---
     try:
         print("\n----- INITIATING GIT PUSH -----")
-        # Define a commit message
         commit_message = f"feat: AI-generated update for {filename}"
-        
-        # Ensure the script is executable before running
         script_path = "./push_to_github.sh"
+        
+        if not os.path.exists(script_path):
+             print(f"❌ Error: The script '{script_path}' was not found.")
+             return
+
         subprocess.run(["chmod", "+x", script_path], check=True)
         
-        # Run the script. It will handle the add, commit, and push.
-        # The 'check=True' will raise an exception if the script returns a non-zero exit code.
         result = subprocess.run(
             ["/bin/bash", script_path, commit_message], 
             check=True, 
             capture_output=True, 
             text=True
         )
-        print(result.stdout) # Print the output from the bash script
+        print(result.stdout)
         print("✅ Git push process completed successfully.")
-
-    except FileNotFoundError:
-        print(f"❌ Error: The script '{script_path}' was not found.")
     except subprocess.CalledProcessError as e:
-        # This will catch errors from the git commands within the script
         print(f"❌ Error during Git push process:")
-        print(e.stderr) # Print the error output from the script
+        print(e.stderr)
 
-async def run_multi_agent(input: str):
-    """implement the multi-agent system."""
-    # Define the kernel
+# --- REVISED MAIN EXECUTION LOGIC ---
+async def run_multi_agent(user_prompt: str):
+    """Implements and runs the multi-agent system with a human approval step."""
     kernel = Kernel()
-
-    # Add the chat completion service to the kernel
+    # Ensure you have AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_DEPLOYMENT_NAME in your .env
     kernel.add_service(AzureChatCompletion())
 
-    # Create the agents using the kernel
-    businessAnalystAgent = ChatCompletionAgent(
+    # --- AGENTS WITH USER-PROVIDED PROMPTS ---
+    business_analyst_agent= ChatCompletionAgent(
         kernel=kernel, 
         name="BusinessAnalyst", 
         instructions="You are a Business Analyst which will take the requirements from the user (also known as a 'customer') and create a project plan for creating the requested app. The Business Analyst understands the user requirements and creates detailed documents with requirements and costing. The documents should be usable by the SoftwareEngineer as a reference for implementing the required features, and by the Product Owner for reference to determine if the application delivered by the Software Engineer meets all of the user's requirements.",
     )
-    sofwareEngineerAgent = ChatCompletionAgent(
+    software_engineer_agent= ChatCompletionAgent(
         kernel=kernel,
         name="SoftwareEngineer", 
         instructions="You are a Software Engineer, and your goal is create a web app using HTML and JavaScript by taking into consideration all the requirements given by the Business Analyst. The application should implement all the requested features. Deliver the code to the Product Owner for review when completed. You can also ask questions of the BusinessAnalyst to clarify any requirements that are unclear.",
     )
-    productOwnerAgent = ChatCompletionAgent(
+    product_owner_agent= ChatCompletionAgent(
         kernel=kernel, 
         name="ProductOwner", 
         instructions="You are the Product Owner which will review the software engineer's code to ensure all user  requirements are completed. You are the guardian of quality, ensuring the final product meets all specifications. IMPORTANT: Verify that the Software Engineer has shared the HTML code using the format ```html [code] ```. This format is required for the code to be saved and pushed to GitHub. Once all client requirements are completed and the code is properly formatted, reply with 'READY FOR USER APPROVAL'. If there are missing features or formatting issues, you will need to send a request back to the SoftwareEngineer or BusinessAnalyst with details of the defect.",
     )
 
-    approvalTerminationStrategy = ApprovalTerminationStrategy()
-    groupChat = AgetGroupChat(
-        agents= [businessAnalystAgent, softwareEngineerAgent, productOwnerAgent],
-        termination_strategy= approvalTerminationStrategy
+    # Create the group chat with the termination strategy
+    group_chat = AgentGroupChat(
+        agents=[business_analyst_agent, software_engineer_agent, product_owner_agent],
+        termination_strategy=ApprovalTerminationStrategy()
     )
 
-    initial_prompt = input
+    # --- FIX: Add the initial message directly to the group's internal history ---
+    initial_message = ChatMessageContent(role="user", content=user_prompt, name="User")
+    group_chat.history.add_message(message=initial_message)
 
-    # Invoke the chat and let the agents collaborate
-    responses = await chat.invoke(input=ChatHistory(messages=[(await retrieve_tool_call_results(message=initial_prompt, tool_call_results=[initial_prompt]))[0]]))
+    print(f"=============================\nStarting Agent Collaboration for: '{user_prompt}'\n=============================\n")
+    # print(f"[{initial_message.name}]: {initial_message.content}\n") # Manually print the first message
+
+    # --- INVOCATION LOOP ---
+    # The final_history will be a copy of the group's history at the end.
+    # We invoke with no arguments, letting the chat run on its internal state.
+    async for message in group_chat.invoke():
+        print(f"[{message.name}]]: {message.content}\n")
+
+    # After the loop, the group_chat.history contains the full conversation
+    final_history = group_chat.history
+
+    print("\n=============================\nAgent Collaboration Finished\n=============================")
     
-    extract_and_save_html(responses)
+    # --- HUMAN-IN-THE-LOOP APPROVAL STEP ---
+    if final_history.messages and final_history.messages[-1].content.strip().upper() == "READY FOR USER APPROVAL":
+        print("\n✅ The agents have completed their work. Please review the conversation.")
+        
+        while True:
+            user_input = input(">>> Type 'APPROVED' to finalize and push, or 'REJECT' to cancel: ")
+            if user_input.strip().upper() == "APPROVED":
+                print("\nUser has approved. Proceeding with post-processing...")
+                extract_and_save_html(final_history)
+                break 
+            elif user_input.strip().upper() == "REJECT":
+                print("\nUser has rejected the work. Exiting without action.")
+                break
+            else:
+                print("   Invalid input. Please try again.")
+    else:
+        print("\nChat concluded without reaching the user approval stage. Exiting.")
 
-    return responses
+
+if __name__ == "__main__":
+    initial_request = (
+        "Create a simple landing page for a new SaaS product called 'AI-Boost'. "
+        "It needs a title, a brief description, and a call-to-action button that says 'Sign Up Now'."
+        "All code should be in a single `index.html` file."
+    )
+    asyncio.run(run_multi_agent(initial_request))
