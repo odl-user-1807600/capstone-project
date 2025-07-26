@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple Calculator</title>
+  <style>
+    /* General styles for the calculator */
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #f4f4f4;
+    }
+
+    .calculator {
+      background-color: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      width: 320px;
+    }
+
+    .calculator h1 {
+      margin-bottom: 10px;
+      font-size: 1.5rem;
+      color: #333;
+    }
+
+    .calculator p {
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      color: #666;
+    }
+
+    .display {
+      background-color: #f9f9f9;
+      border: 1px solid #ccc;
+      margin: 0 auto 20px auto;
+      width: calc(100% - 40px);
+      height: 40px;
+      font-size: 1.3rem;
+      border-radius: 5px;
+      text-align: right;
+      padding-right: 10px;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    button {
+      background-color: #007BFF;
+      color: white;
+      border: none;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    button.clear {
+      background-color: #dc3545;
+    }
+
+    button.clear:hover {
+      background-color: #a71d2a;
+    }
+  </style>
+</head>
+<body>
+  <div class="calculator">
+    <h1>Simple Calculator</h1>
+    <p>Perform basic arithmetic operations: addition, subtraction, multiplication, and division.</p>
+    <div class="display" id="display">0</div>
+    <div class="button-grid">
+      <!-- Number buttons -->
+      <button onclick="appendNumber('7')">7</button>
+      <button onclick="appendNumber('8')">8</button>
+      <button onclick="appendNumber('9')">9</button>
+      <button onclick="setOperator('/')">/</button>
+
+      <button onclick="appendNumber('4')">4</button>
+      <button onclick="appendNumber('5')">5</button>
+      <button onclick="appendNumber('6')">6</button>
+      <button onclick="setOperator('*')">*</button>
+
+      <button onclick="appendNumber('1')">1</button>
+      <button onclick="appendNumber('2')">2</button>
+      <button onclick="appendNumber('3')">3</button>
+      <button onclick="setOperator('-')">-</button>
+
+      <button onclick="appendNumber('0')">0</button>
+      <button onclick="clearDisplay()" class="clear">C</button>
+      <button onclick="calculateResult()">=</button>
+      <button onclick="setOperator('+')">+</button>
+    </div>
+  </div>
+
+  <script>
+    // Global Variables
+    let display = document.getElementById("display");
+    let currentValue = ""; // Holds the current input value
+    let operator = ""; // Current operator in use
+    let previousValue = ""; // Holds the previous entered value
+    
+    // Update display
+    function updateDisplay(value) {
+      display.textContent = value;
+    }
+
+    // Append number to the display
+    function appendNumber(number) {
+      if (display.textContent === "0") {
+        currentValue = number;
+      } else {
+        currentValue += number;
+      }
+      updateDisplay(currentValue);
+    }
+
+    // Set operator
+    function setOperator(op) {
+      if (currentValue !== "") {
+        previousValue = currentValue;
+        currentValue = "";
+        operator = op;
+        updateDisplay(operator);
+      }
+    }
+
+    // Perform the calculation
+    function calculateResult() {
+      if (previousValue !== "" && currentValue !== "" && operator !== "") {
+        const num1 = parseFloat(previousValue);
+        const num2 = parseFloat(currentValue);
+        let result = 0;
+
+        switch (operator) {
+          case "+":
+            result = num1 + num2;
+            break;
+          case "-":
+            result = num1 - num2;
+            break;
+          case "*":
+            result = num1 * num2;
+            break;
+          case "/":
+            if (num2 === 0) {
+              alert("Division by zero is not allowed!");
+              clearDisplay();
+              return;
+            }
+            result = num1 / num2;
+            break;
+        }
+        updateDisplay(result.toString());
+        previousValue = result.toString();
+        currentValue = "";
+        operator = "";
+      }
+    }
+
+    // Clear the display
+    function clearDisplay() {
+      currentValue = "";
+      operator = "";
+      previousValue = "";
+      updateDisplay("0");
+    }
+  </script>
+</body>
+</html>
